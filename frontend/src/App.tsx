@@ -27,7 +27,7 @@ const App: React.FC = () => {
   });
   const [sortBy, setSortBy] = useState<SortByOptions>(() => {
     const params = new URLSearchParams(window.location.search);
-    return (params.get('sort') as SortByOptions) || 'hottest';
+    return (params.get('sort') as SortByOptions) || 'date_added';
   });
   const [selectedGame, setSelectedGame] = useState<Game | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
