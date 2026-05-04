@@ -134,6 +134,11 @@ def get_file_content_with_type(project: str, path: str | None = None) -> tuple[b
     resp.raise_for_status()
 
     json_data = resp.json()
+
+    # GitHub returns a JSON array when the path is a directory, not a file
+    if isinstance(json_data, list):
+        raise GithubFileNotFoundError(f"Path is a directory, not a file: {api_url}")
+
     download_url = json_data.get("download_url")
     if not download_url:
         raise GithubFileNotFoundError(f"No download URL for file: {api_url}")
