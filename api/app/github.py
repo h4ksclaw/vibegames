@@ -1,5 +1,4 @@
 import base64
-import mimetypes
 import re
 from functools import lru_cache
 
@@ -36,12 +35,6 @@ def get_token_user() -> str:
     resp = requests.get("https://api.github.com/user", headers=headers)
     resp.raise_for_status()
     return resp.json()["login"]
-
-
-def _get_file_api_url(project: str, path: str) -> str:
-    """Build the GitHub Contents API URL for a project file."""
-    repo_owner, repo_name = get_repo_owner_and_name(settings.GITHUB_REPOSITORY)
-    return f"https://api.github.com/repos/{repo_owner}/{repo_name}/contents/{settings.PROJECTS_PATH}/{project}/{path}"
 
 
 def update_or_create_file(path: str, content: str, project: str) -> None:
@@ -101,6 +94,8 @@ def get_raw_file_content(project: str, path: str | None = None) -> bytes:
     )
     if resp.status_code == 200:
         json_data = resp.json()
+        if isinstance(json_data, list):
+            raise GithubFileNotFoundError(f"Path is a directory, not a file: {base_url}")
         if "download_url" in json_data:
             # If the file is large, GitHub provides a download URL
             download_url = json_data["download_url"]
@@ -116,49 +111,6 @@ def get_raw_file_content(project: str, path: str | None = None) -> bytes:
             raise GithubFileNotFoundError(f"File content is empty: {base_url}")
     else:
         raise GithubFileNotFoundError(f"File not found: {base_url}")
-
-
-def get_file_content_with_type(project: str, path: str | None = None) -> tuple[bytes, str]:
-    """Fetch a file via GitHub's download_url and return (content, content_type).
-
-    Uses raw.githubusercontent.com which provides accurate Content-Type
-    headers, falling back to mimetypes.guess_type() if the header is missing.
-    """
-    path = path or "index.html"
-    api_url = _get_file_api_url(project, path)
-
-    headers = {"Authorization": f"token {settings.GITHUB_API_TOKEN}"}
-    resp = requests.get(api_url, headers=headers, timeout=10)
-    if resp.status_code == 404:
-        raise GithubFileNotFoundError(f"File not found: {api_url}")
-    resp.raise_for_status()
-
-    json_data = resp.json()
-
-    # GitHub returns a JSON array when the path is a directory, not a file
-    if isinstance(json_data, list):
-        raise GithubFileNotFoundError(f"Path is a directory, not a file: {api_url}")
-
-    download_url = json_data.get("download_url")
-    if not download_url:
-        raise GithubFileNotFoundError(f"No download URL for file: {api_url}")
-
-    # Fetch from the download URL — raw.githubusercontent.com sets correct Content-Type
-    dl_resp = requests.get(download_url, headers={"Authorization": f"token {settings.GITHUB_API_TOKEN}"}, timeout=10)
-    dl_resp.raise_for_status()
-
-    content_type = dl_resp.headers.get("Content-Type", "")
-    # GitHub sometimes returns charset info, strip it for cleanliness
-    if ";" in content_type:
-        content_type = content_type.split(";")[0].strip()
-
-    # Fallback to mimetypes if GitHub didn't provide a useful content-type
-    if not content_type or content_type == "application/octet-stream":
-        guessed, _ = mimetypes.guess_type(path)
-        if guessed:
-            content_type = guessed
-
-    return dl_resp.content, content_type or "application/octet-stream"
 
 
 def get_file_url(project: str, path: str | None = None) -> str:
